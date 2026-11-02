@@ -1,0 +1,27 @@
+# Compiled files
+out/
+*.class
+*.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Eclipse
+.settings/
+.classpath
+.project
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+data/*.log
+*.log
+
+# Temporary files
+sources.txt
