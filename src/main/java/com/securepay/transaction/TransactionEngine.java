@@ -1,10 +1,12 @@
 package main.java.com.securepay.transaction;
 
 import main.java.com.securepay.account.AccountService;
+import main.java.com.securepay.audit.AuditLogger;
 import main.java.com.securepay.concurrency.LockManager;
 import main.java.com.securepay.exception.AccountLockedException;
 import main.java.com.securepay.exception.InsufficientBalanceException;
 import main.java.com.securepay.exception.SecurePayException;
+import main.java.com.securepay.fraud.FraudDetector;
 import main.java.com.securepay.model.Account;
 import main.java.com.securepay.model.Transaction;
 import main.java.com.securepay.model.TransactionStatus;
@@ -17,11 +19,15 @@ public class TransactionEngine {
     private final AccountService accountService;
     private final LockManager lockManager;
     private final IdempotencyStore idempotencyStore;
+    private final AuditLogger auditLogger;
+    private final FraudDetector fraudDetector;
 
-    public TransactionEngine(AccountService accountService, LockManager lockManager, IdempotencyStore idempotencyStore) {
+    public TransactionEngine(AccountService accountService, LockManager lockManager, IdempotencyStore idempotencyStore, AuditLogger auditLogger, FraudDetector fraudDetector) {
         this.accountService = accountService;
         this.lockManager = lockManager;
         this.idempotencyStore = idempotencyStore;
+        this.auditLogger = auditLogger;
+        this.fraudDetector = fraudDetector;
     }
 
     public Transaction process(Transaction transaction) {
@@ -66,12 +72,23 @@ public class TransactionEngine {
                 to.credit(transaction.getAmount());
 
                 transaction.transitionTo(TransactionStatus.SUCCESS);
+
+                auditLogger.log("TRANSACTION_SUCCESS", transaction.getInitiatedByUserId(), transaction.getFromAccountId(), transaction.getTransactionId(),
+                        "Transferred " + transaction.getAmount() + " successfully");
+
+                fraudDetector.submit(transaction);
             } catch (InsufficientBalanceException | AccountLockedException e) {
                 transaction.fail(e.getMessage());
+                auditLogger.log("TRANSACTION_FAILED", transaction.getInitiatedByUserId(),
+                        transaction.getFromAccountId(), transaction.getTransactionId(), transaction.getFailureReason());
+                fraudDetector.submit(transaction);
             }
         }catch (Exception e) {
             String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             transaction.fail(reason);
+            auditLogger.log("TRANSACTION_FAILED", transaction.getInitiatedByUserId(),
+                    transaction.getFromAccountId(), transaction.getTransactionId(), transaction.getFailureReason());
+            fraudDetector.submit(transaction);
         }
         return transaction;
     }
