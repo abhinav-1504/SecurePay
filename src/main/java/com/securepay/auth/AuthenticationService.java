@@ -75,7 +75,7 @@ public class AuthenticationService {
         return sessionManager.validateSession(token);
     }
 
-    public Optional<User> findById(String userId) {
+    public Optional<User> findByUserId(String userId) {
         return Optional.ofNullable(usersById.get(userId));
     }
 
