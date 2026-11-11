@@ -48,23 +48,26 @@ If the system is not properly synchronized, all three threads can read the old b
 | Failure Recovery | File-based Transaction Journal + Recovery Service |
 | Transaction State Machine | Strict enum-based state transitions |
 | Role-Based Access | `USER` and `ADMIN` roles |
+| Account Controls | Freeze / Unfreeze / Block account |
+| Clean Public API | `SecurePayService` interface separated from wiring and demo |
 
 ---
 
 ## High-Level Architecture
 
 ```
-                  CLIENT / USER REQUESTS
+                  CLIENT / DEMO / FUTURE REST
                            │
                            ▼
                  ┌──────────────────┐
-                 │ Security Layer   │
-                 │ Authentication   │
-                 │ Authorization    │
+                 │  SecurePayService│  ← Public API layer
+                 │  (api package)   │
                  └────────┬─────────┘
                           │
                           ▼
                  ┌──────────────────┐
+                 │ Security Layer   │
+                 │ Auth + Session   │
                  │ Rate Limiter     │
                  │ Idempotency Check│
                  └────────┬─────────┘
@@ -100,34 +103,39 @@ If the system is not properly synchronized, all three threads can read the old b
 
 ```
 SecurePay/
-├── data/                              # Runtime logs
+├── data/                                 # Runtime logs
 │   ├── audit.log
 │   └── transaction_journal.log
 │
 └── src/main/java/com/securepay/
+    ├── api/                              # Public API layer
+    │   ├── SecurePayService.java         # Interface (public contract)
+    │   └── SecurePayServiceImpl.java     # API implementation
+    │
     ├── app/
-    │   └── SecurePayApplication.java  # Main entry + full demo
+    │   ├── SecurePayApplication.java     # Wiring + start/stop only
+    │   └── DemoRunner.java               # End-to-end demo walkthrough
     │
     ├── auth/
-    │   ├── AuthenticationService.java # Register, Login, Lockout
-    │   └── SessionManager.java        # Token-based sessions
+    │   ├── AuthenticationService.java    # Register, Login, Lockout
+    │   └── SessionManager.java           # Token-based sessions
     │
     ├── account/
-    │   └── AccountService.java        # Wallet lifecycle
+    │   └── AccountService.java           # Wallet lifecycle + freeze/block
     │
     ├── transaction/
-    │   ├── TransactionEngine.java     # Core transfer logic
-    │   ├── TransactionProcessor.java  # Queue + workers
+    │   ├── TransactionEngine.java        # Core transfer logic
+    │   ├── TransactionProcessor.java     # Queue + workers
     │   └── IdempotencyStore.java
     │
     ├── concurrency/
-    │   ├── LockManager.java           # Ordered locking
+    │   ├── LockManager.java              # Ordered locking
     │   ├── TransactionQueue.java
     │   └── ThreadPoolManager.java
     │
     ├── security/
-    │   ├── PasswordHasher.java        # PBKDF2
-    │   └── RateLimiter.java           # Sliding window
+    │   ├── PasswordHasher.java           # PBKDF2
+    │   └── RateLimiter.java              # Sliding window
     │
     ├── fraud/
     │   ├── FraudDetector.java
@@ -135,7 +143,7 @@ SecurePay/
     │   └── FraudContext.java
     │
     ├── audit/
-    │   └── AuditLogger.java           # Async logging
+    │   └── AuditLogger.java              # Async logging
     │
     ├── recovery/
     │   ├── TransactionJournal.java
@@ -153,6 +161,15 @@ SecurePay/
     └── exception/
         └── (Custom exceptions)
 ```
+
+### Layer responsibilities
+
+| Layer | Responsibility |
+|-------|----------------|
+| `api` | Public methods only (`register`, `login`, `transfer`, …) |
+| `app/SecurePayApplication` | Create modules, start/stop background services |
+| `app/DemoRunner` | Demo script (Rahul / Priya / Amit) — no business logic |
+| Internal packages | Auth, account, locking, engine, fraud, audit, recovery |
 
 ---
 
@@ -197,6 +214,10 @@ Invalid transitions are rejected.
 ### 7. Transaction Journal
 Before/after every critical step the engine writes to a persistent journal.  
 On restart, `RecoveryService` detects incomplete transactions.
+
+### 8. Separated Public API
+Demo and future REST/CLI depend only on `SecurePayService`.  
+Wiring stays in `SecurePayApplication`. Business modules stay internal.
 
 ---
 
@@ -357,6 +378,7 @@ At the end of the demo:
 - Account lockout after 5 failed login attempts (15 minutes)
 - Session tokens with 30-minute TTL
 - Sliding-window rate limiting
+- Account freeze / unfreeze / block (admin-controlled)
 
 ---
 
@@ -377,9 +399,10 @@ New rules can be added by implementing the `FraudRule` interface.
 - Persistent storage (database instead of in-memory maps)
 - Distributed locking (Redis / ZooKeeper) for multi-instance deployment
 - More sophisticated fraud rules (ML-based scoring)
-- REST API layer (Spring Boot)
+- REST API layer on top of `SecurePayService` (Spring Boot)
 - Metrics and monitoring (Micrometer / Prometheus)
 - Compensating transactions for full automatic recovery
+- Admin APIs for freeze / unfreeze / block exposed on the public service
 
 ---
 
